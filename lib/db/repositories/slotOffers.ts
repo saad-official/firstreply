@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../client";
 import { slotOffers } from "../schema";
 import type { SlotOffer } from "../types";
@@ -44,4 +44,34 @@ export async function getById(orgId: string, slotOfferId: string): Promise<SlotO
     .where(and(eq(slotOffers.id, slotOfferId), eq(slotOffers.orgId, orgId)))
     .limit(1);
   return row ?? null;
+}
+
+/** Slots for several messages at once (lead thread view), keyed by message id, earliest first. */
+export async function listForMessages(orgId: string, messageIds: readonly string[]): Promise<Map<string, SlotOffer[]>> {
+  const out = new Map<string, SlotOffer[]>();
+  if (messageIds.length === 0) return out;
+  const db = await getDb();
+  const rows = await db
+    .select()
+    .from(slotOffers)
+    .where(and(eq(slotOffers.orgId, orgId), inArray(slotOffers.messageId, [...messageIds])))
+    .orderBy(asc(slotOffers.startsAt));
+  for (const row of rows) {
+    const list = out.get(row.messageId) ?? [];
+    list.push(row);
+    out.set(row.messageId, list);
+  }
+  return out;
+}
+
+/** Replaces a message's offered slots (stale-draft refresh). */
+export async function replaceForMessage(
+  orgId: string,
+  messageId: string,
+  slots: readonly SlotInput[],
+): Promise<SlotOffer[]> {
+  const db = await getDb();
+  await assertMessageInOrg(db, orgId, messageId);
+  await db.delete(slotOffers).where(and(eq(slotOffers.messageId, messageId), eq(slotOffers.orgId, orgId)));
+  return createMany(orgId, messageId, slots);
 }

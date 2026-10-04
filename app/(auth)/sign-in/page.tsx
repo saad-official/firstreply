@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { textLink } from "@/components/marketing/site";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { safeNextPath } from "../safe-next";
 import { SignInForm } from "./sign-in-form";
 
@@ -17,9 +19,11 @@ export default async function SignInPage({ searchParams }: PageProps<"/sign-in">
   return (
     <Card className="shadow-card">
       <CardHeader>
-        <p className="font-mono text-xs tracking-wide text-muted-foreground uppercase">Sign in</p>
-        <CardTitle className="font-heading text-2xl font-bold tracking-tight">Welcome back</CardTitle>
-        <CardDescription>Pick up where your last questionnaire left off.</CardDescription>
+        <p className="stopwatch text-xs text-foreground/65">Sign in</p>
+        <CardTitle>
+          <h1 className="text-2xl leading-tight">Welcome back</h1>
+        </CardTitle>
+        <CardDescription className="text-foreground/70">Your queue is waiting. New leads keep their place until you&rsquo;re in.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
         {expired ? (
@@ -29,9 +33,9 @@ export default async function SignInPage({ searchParams }: PageProps<"/sign-in">
         ) : null}
         <SignInForm next={next} />
       </CardContent>
-      <CardFooter className="justify-center text-sm text-muted-foreground">
+      <CardFooter className="justify-center text-sm text-foreground/70">
         New to Firstreply?&nbsp;
-        <Link href={signUpHref} className="font-medium text-foreground underline-offset-4 hover:underline">
+        <Link href={signUpHref} className={cn(textLink, "font-medium text-foreground")}>
           Create an account
         </Link>
       </CardFooter>

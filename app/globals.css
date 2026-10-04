@@ -21,6 +21,7 @@
   --color-cream: var(--cream);
   --color-coral: var(--coral);
   --color-coral-foreground: var(--coral-foreground);
+  --color-coral-ink: var(--coral-ink);
   --color-sea: var(--sea);
   --color-sea-foreground: var(--sea-foreground);
   --color-lemon: var(--lemon);
@@ -78,6 +79,8 @@
   --lemon: oklch(0.86 0.15 92);
   --lemon-foreground: oklch(0.32 0.07 85);
   --ash: oklch(0.55 0.015 260);
+  /* Coral pulled 18% toward night: 5.3:1 under white text, 4.9:1 on cream (buttons, small text). */
+  --coral-ink: color-mix(in oklch, var(--coral) 82%, var(--night));
 
   --background: var(--cream);
   --foreground: var(--night);
@@ -85,8 +88,8 @@
   --card-foreground: var(--night);
   --popover: oklch(1 0 0);
   --popover-foreground: var(--night);
-  --primary: var(--coral);
-  --primary-foreground: var(--coral-foreground);
+  --primary: var(--coral-ink);
+  --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.94 0.012 85);
   --secondary-foreground: var(--night);
   --muted: oklch(0.955 0.01 85);
@@ -124,6 +127,7 @@
   --lemon: oklch(0.85 0.14 92);
   --lemon-foreground: oklch(0.25 0.06 85);
   --ash: oklch(0.72 0.012 260);
+  --coral-ink: var(--coral);
 
   --background: oklch(0.16 0.015 260);
   --foreground: var(--night);

@@ -1,5 +1,6 @@
 import "server-only";
 import { Resend } from "resend";
+import type { OutboxAttachment } from "@/lib/db/types";
 import { optionalEnv } from "@/lib/env";
 
 export type OutgoingEmail = {
@@ -8,6 +9,8 @@ export type OutgoingEmail = {
   text: string;
   html?: string;
   replyTo?: string;
+  /** Text attachments, e.g. the booking confirmation's .ics invite. */
+  attachments?: OutboxAttachment[];
 };
 
 export type SendResult = {
@@ -74,6 +77,11 @@ export class ResendProvider implements EmailProvider {
       text: banner + email.text,
       html: email.html ? htmlBanner + email.html : undefined,
       replyTo: email.replyTo,
+      attachments: email.attachments?.map((a) => ({
+        filename: a.filename,
+        content: Buffer.from(a.content, "utf-8"),
+        contentType: a.contentType,
+      })),
     });
     if (error) throw new Error(`Resend: ${error.message}`);
     return {

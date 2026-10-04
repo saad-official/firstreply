@@ -1,7 +1,7 @@
 import "server-only";
-import { and, count, desc, eq, gte, inArray, isNull, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull, lt, ne, or, sql, type SQL } from "drizzle-orm";
 import { getDb } from "../client";
-import { forms, leads } from "../schema";
+import { forms, leads, meetings, outbox } from "../schema";
 import type { Lead, LeadEnrichment, LeadFit, LeadSource, LeadStatus } from "../types";
 import { clampLimit, NotFoundError } from "./shared";
 
@@ -193,4 +193,132 @@ export async function countCreatedSince(orgId: string, since: Date): Promise<num
     .from(leads)
     .where(and(eq(leads.orgId, orgId), gte(leads.createdAt, since)));
   return row?.n ?? 0;
+}
+
+/**
+ * Leads created at or after `since` that count towards the Free plan's 25 a
+ * month: synthetic demo leads and spam (honeypot or scored spam) are free.
+ */
+export async function countBillableCreatedSince(orgId: string, since: Date): Promise<number> {
+  const db = await getDb();
+  const [row] = await db
+    .select({ n: count() })
+    .from(leads)
+    .where(
+      and(eq(leads.orgId, orgId), gte(leads.createdAt, since), ne(leads.source, "demo"), ne(leads.status, "spam")),
+    );
+  return row?.n ?? 0;
+}
+
+/**
+ * Dedupe candidates: leads created at or after `since` whose email ends in
+ * one of `domains` (lower-case), newest first. The caller compares
+ * normalised identity keys (plus-tags, Gmail dots) itself.
+ */
+export async function listRecentByDomains(
+  orgId: string,
+  domains: readonly string[],
+  since: Date,
+  limit = 500,
+): Promise<Lead[]> {
+  if (domains.length === 0) return [];
+  const db = await getDb();
+  return db
+    .select()
+    .from(leads)
+    .where(
+      and(
+        eq(leads.orgId, orgId),
+        gte(leads.createdAt, since),
+        or(...domains.map((d) => sql`${leads.email} like ${`%@${d.toLowerCase()}`}`)),
+      ),
+    )
+    .orderBy(desc(leads.createdAt))
+    .limit(clampLimit(limit, 500, 1000));
+}
+
+/**
+ * Takes a short lease on a lead for processLead so two workers (the intake
+ * request and the cron tick) never draft twice. Null when another worker
+ * holds a lease younger than `leaseMs`.
+ */
+export async function claimForProcessing(
+  orgId: string,
+  leadId: string,
+  now: Date = new Date(),
+  leaseMs = 2 * 60 * 1000,
+): Promise<Lead | null> {
+  const staleBefore = new Date(now.getTime() - leaseMs).toISOString();
+  const db = await getDb();
+  const [row] = await db
+    .update(leads)
+    .set({
+      enrichment: sql`coalesce(${leads.enrichment}, '{}'::jsonb) || jsonb_build_object('processingClaimedAt', ${now.toISOString()}::text)`,
+    })
+    .where(
+      and(
+        eq(leads.id, leadId),
+        eq(leads.orgId, orgId),
+        sql`(${leads.enrichment}->>'processingClaimedAt' is null or (${leads.enrichment}->>'processingClaimedAt')::timestamptz < ${staleBefore}::timestamptz)`,
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
+/** Releases the processLead lease. */
+export async function releaseProcessing(orgId: string, leadId: string): Promise<void> {
+  const db = await getDb();
+  await db
+    .update(leads)
+    .set({ enrichment: sql`coalesce(${leads.enrichment}, '{}'::jsonb) - 'processingClaimedAt'` })
+    .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+}
+
+/** Unprocessed leads (status new, never scored), oldest first: the cron tick's work list. Every org unless `orgId`. */
+export async function listUnprocessed(options: { orgId?: string; limit?: number } = {}): Promise<Lead[]> {
+  const where: SQL[] = [eq(leads.status, "new"), isNull(leads.score)];
+  if (options.orgId) where.push(eq(leads.orgId, options.orgId));
+  const db = await getDb();
+  return db
+    .select()
+    .from(leads)
+    .where(and(...where))
+    .orderBy(asc(leads.createdAt))
+    .limit(clampLimit(options.limit, 20, 200));
+}
+
+/** Lead lookup without an org, for machine routes that only carry a lead id (the row carries its org id). */
+export async function getByIdUnscoped(leadId: string): Promise<Lead | null> {
+  const db = await getDb();
+  const [row] = await db.select().from(leads).where(eq(leads.id, leadId)).limit(1);
+  return row ?? null;
+}
+
+/**
+ * Retention purge: deletes leads (and, by cascade, their messages, slot
+ * offers and meetings) created and last touched before `cutoff`, except
+ * leads with a booked meeting still ahead. Their outbox copies go first so
+ * the lead's text does not outlive it. Returns the number of leads deleted.
+ */
+export async function purgeOlderThan(cutoff: Date, now: Date = new Date(), limit = 500): Promise<number> {
+  const db = await getDb();
+  const candidates = await db
+    .select({ id: leads.id })
+    .from(leads)
+    .where(
+      and(
+        lt(leads.updatedAt, cutoff),
+        lt(leads.createdAt, cutoff),
+        sql`not exists (select 1 from ${meetings} where ${meetings.leadId} = ${leads.id} and ${meetings.status} = 'booked' and ${meetings.endsAt} > ${now.toISOString()}::timestamptz)`,
+      ),
+    )
+    .limit(clampLimit(limit, 500, 5000));
+  const ids = candidates.map((c) => c.id);
+  if (ids.length === 0) return 0;
+  return db.transaction(async (tx) => {
+    await tx.delete(outbox).where(inArray(outbox.leadId, ids));
+    const deleted = await tx.delete(leads).where(inArray(leads.id, ids)).returning({ id: leads.id });
+    return deleted.length;
+  });
 }

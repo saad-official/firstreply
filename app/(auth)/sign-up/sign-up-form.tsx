@@ -8,6 +8,15 @@ import { Field, FormError, SubmitButton, formText, looksLikeEmail } from "../for
 const MIN_PASSWORD = 10;
 const MAX_PASSWORD = 128;
 
+/** IANA zone of this browser; seeds the workspace time zone (the server falls back to UTC). */
+function browserTimeZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 type Errors = { form?: string; businessName?: string; email?: string; password?: string };
 
 function errorsFor(error: { code?: string; status?: number; message?: string }): Errors {
@@ -41,7 +50,7 @@ export function SignUpForm({ next }: { next: string }) {
     const password = formText(form, "password");
 
     const fieldErrors: Errors = {};
-    if (!businessName) fieldErrors.businessName = "Enter your shop or business name.";
+    if (!businessName) fieldErrors.businessName = "Enter your business name.";
     else if (businessName.length > 120) fieldErrors.businessName = "Keep it under 120 characters.";
     if (!looksLikeEmail(email)) fieldErrors.email = "Enter a valid email address.";
     if (password.length < MIN_PASSWORD) fieldErrors.password = `Use at least ${MIN_PASSWORD} characters.`;
@@ -51,7 +60,7 @@ export function SignUpForm({ next }: { next: string }) {
 
     setPending(true);
     try {
-      const { error } = await signUp.email({ name: businessName, email, password, businessName });
+      const { error } = await signUp.email({ name: businessName, email, password, businessName, timezone: browserTimeZone() });
       if (error) {
         setErrors(errorsFor(error));
         setPending(false);
@@ -70,7 +79,7 @@ export function SignUpForm({ next }: { next: string }) {
       <FormError message={errors.form} />
       <Field
         id="businessName"
-        label="Shop or business name"
+        label="Business name"
         autoComplete="organization"
         required
         maxLength={120}

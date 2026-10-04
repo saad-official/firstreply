@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { textLink } from "@/components/marketing/site";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { safeNextPath } from "../safe-next";
 import { SignUpForm } from "./sign-up-form";
 
 export const metadata: Metadata = {
   title: "Create your account",
+  description: "Start free: 25 leads a month, manual approval, no card needed.",
 };
 
 export default async function SignUpPage({ searchParams }: PageProps<"/sign-up">) {
@@ -16,16 +19,20 @@ export default async function SignUpPage({ searchParams }: PageProps<"/sign-up">
   return (
     <Card className="shadow-card">
       <CardHeader>
-        <p className="font-mono text-xs tracking-wide text-muted-foreground uppercase">Free account</p>
-        <CardTitle className="font-heading text-2xl font-bold tracking-tight">Answer the next questionnaire in hours, not days</CardTitle>
-        <CardDescription>One questionnaire a month with 25 policy pages on Free. No card needed.</CardDescription>
+        <p className="stopwatch text-xs text-foreground/65">Free account</p>
+        <CardTitle>
+          <h1 className="text-2xl leading-tight text-balance">Answer your next lead in under a minute</h1>
+        </CardTitle>
+        <CardDescription className="text-foreground/70">
+          Free covers 25 leads a month, with every reply approved by you. No card needed.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <SignUpForm next={next} />
       </CardContent>
-      <CardFooter className="justify-center text-sm text-muted-foreground">
+      <CardFooter className="justify-center text-sm text-foreground/70">
         Already have an account?&nbsp;
-        <Link href={signInHref} className="font-medium text-foreground underline-offset-4 hover:underline">
+        <Link href={signInHref} className={cn(textLink, "font-medium text-foreground")}>
           Sign in
         </Link>
       </CardFooter>

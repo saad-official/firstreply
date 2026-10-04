@@ -71,8 +71,12 @@ export const MEETING_STATUSES = ["booked", "cancelled", "no_show", "held"] as co
 export const EMAIL_PROVIDERS = ["outbox", "resend"] as const;
 export const OUTBOX_STATUSES = ["queued", "sent", "delivered", "failed"] as const;
 export const ACTORS = ["agent", "user", "system", "cron", "webhook"] as const;
-/** How a lead arrived. `source_label` carries the detail (form name, "Typeform", ...). */
-export const LEAD_SOURCES = ["form", "webhook", "email", "manual"] as const;
+/**
+ * How a lead arrived. `source_label` carries the detail (form name, "Typeform", ...).
+ * `demo` marks synthetic leads from "Load demo workspace" (exempt from plan
+ * limits). The column is plain text, so adding a value needs no migration.
+ */
+export const LEAD_SOURCES = ["form", "webhook", "email", "manual", "demo"] as const;
 export const MEETING_LENGTHS = [15, 30, 45] as const;
 
 export type LeadSource = (typeof LEAD_SOURCES)[number];
@@ -104,6 +108,8 @@ export type OrgVoice = {
   signOff?: string;
   /** Phrases or habits to avoid / prefer, free text. */
   notes?: string;
+  /** Decline policy: one helpful link offered to leads that are not a fit (spec 3.4). */
+  declineResourceUrl?: string;
 };
 
 export type FormFieldType = "text" | "email" | "textarea" | "tel" | "url" | "select";
@@ -132,6 +138,12 @@ export type LeadEnrichment = {
   /** Why enrichment was skipped or failed, e.g. "free-mail domain", "robots.txt". */
   error?: string | null;
   fetchedAt?: string;
+  /** The scorer's one-sentence summary of who the lead is and what they want. */
+  leadSummary?: string | null;
+  /** Score confidence (0..1) from the scorer. */
+  scoreConfidence?: number | null;
+  /** Lease for processLead (ISO time); a second worker skips the lead while it is fresh. */
+  processingClaimedAt?: string | null;
 };
 
 /** Inbound reply classification (messages.classification). */
@@ -145,6 +157,15 @@ export type MessageClassification = {
   question?: string | null;
   reason?: string | null;
   confidence?: number;
+  /** One-sentence summary of the reply (classifier output). */
+  summary?: string | null;
+  /** What the negotiation engine decided: book, counter, draft_answer, close, follow_up_later, review. */
+  action?: string | null;
+  /** out_of_office: when to follow up (ISO instant), and when the follow-up was drafted. */
+  followUpAt?: string | null;
+  followUpDoneAt?: string | null;
+  /** "model" or "fallback" (keyword rules when no model was available). */
+  classifier?: "model" | "fallback";
 };
 
 export type OutboxAttachment = {

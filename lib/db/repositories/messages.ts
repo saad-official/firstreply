@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, count, eq, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { getDb } from "../client";
 import { leads, messages } from "../schema";
 import type { Lead, Message, MessageClassification, MessageDirection, MessageKind, MessageStatus } from "../types";
@@ -81,7 +81,10 @@ export async function listForLead(orgId: string, leadId: string): Promise<Messag
     .orderBy(asc(messages.createdAt), asc(messages.id));
 }
 
-export type QueueLead = Pick<Lead, "id" | "name" | "email" | "company" | "status" | "score" | "fit" | "createdAt">;
+export type QueueLead = Pick<
+  Lead,
+  "id" | "name" | "email" | "company" | "status" | "score" | "fit" | "createdAt" | "message" | "scoreReasons"
+>;
 export type QueueItem = { message: Message; lead: QueueLead };
 
 /** Approval queue: outbound drafts, oldest first (the lead waiting longest comes first). */
@@ -99,6 +102,8 @@ export async function listQueue(orgId: string, options: { limit?: number } = {})
         score: leads.score,
         fit: leads.fit,
         createdAt: leads.createdAt,
+        message: leads.message,
+        scoreReasons: leads.scoreReasons,
       },
     })
     .from(messages)
@@ -225,5 +230,124 @@ export async function setClassification(
     .set({ classification })
     .where(and(eq(messages.id, messageId), eq(messages.orgId, orgId), eq(messages.direction, "in")))
     .returning();
+  return row ?? null;
+}
+
+/**
+ * Approved outbound messages waiting to be sent, oldest first, for one org
+ * or (cron) every org.
+ */
+export async function listApproved(options: { orgId?: string; limit?: number } = {}): Promise<Message[]> {
+  const where = [eq(messages.status, "approved"), eq(messages.direction, "out")];
+  if (options.orgId) where.push(eq(messages.orgId, options.orgId));
+  const db = await getDb();
+  return db
+    .select()
+    .from(messages)
+    .where(and(...where))
+    .orderBy(asc(messages.createdAt), asc(messages.id))
+    .limit(clampLimit(options.limit, 100, 500));
+}
+
+/**
+ * Undo a send claim after the provider failed: sent -> approved, sent_at
+ * cleared. Null when the message is not in "sent".
+ */
+export async function revertToApproved(orgId: string, messageId: string): Promise<Message | null> {
+  const db = await getDb();
+  const [row] = await db
+    .update(messages)
+    .set({ status: "approved", sentAt: null })
+    .where(and(eq(messages.id, messageId), eq(messages.orgId, orgId), eq(messages.status, "sent")))
+    .returning();
+  return row ?? null;
+}
+
+/** Replaces the content of an unsent outbound message (draft or approved). Null when it is not one. */
+export async function updateContent(
+  orgId: string,
+  messageId: string,
+  content: { subject?: string; body?: string; rationale?: string | null; confidence?: number | null },
+): Promise<Message | null> {
+  const values: Partial<typeof messages.$inferInsert> = {};
+  if (content.subject !== undefined) values.subject = content.subject;
+  if (content.body !== undefined) {
+    if (!content.body.trim()) throw new Error("The message body cannot be empty.");
+    values.body = content.body;
+  }
+  if (content.rationale !== undefined) values.rationale = content.rationale;
+  if (content.confidence !== undefined) values.confidence = content.confidence;
+  if (Object.keys(values).length === 0) return getById(orgId, messageId);
+  const db = await getDb();
+  const [row] = await db
+    .update(messages)
+    .set(values)
+    .where(
+      and(
+        eq(messages.id, messageId),
+        eq(messages.orgId, orgId),
+        eq(messages.direction, "out"),
+        inArray(messages.status, ["draft", "approved"]),
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
+/** Outbound drafts for one org or every org (cron: refresh stale slots), oldest first. */
+export async function listDrafts(options: { orgId?: string; limit?: number } = {}): Promise<Message[]> {
+  const where = [eq(messages.status, "draft"), eq(messages.direction, "out")];
+  if (options.orgId) where.push(eq(messages.orgId, options.orgId));
+  const db = await getDb();
+  return db
+    .select()
+    .from(messages)
+    .where(and(...where))
+    .orderBy(asc(messages.createdAt), asc(messages.id))
+    .limit(clampLimit(options.limit, 200, 1000));
+}
+
+/**
+ * Inbound out-of-office replies whose follow-up is due and not yet drafted
+ * (classification.followUpAt <= now, followUpDoneAt unset), every org.
+ */
+export async function listDueFollowUps(now: Date, options: { limit?: number } = {}): Promise<Message[]> {
+  const db = await getDb();
+  return db
+    .select()
+    .from(messages)
+    .where(
+      and(
+        eq(messages.direction, "in"),
+        isNotNull(messages.classification),
+        sql`${messages.classification}->>'followUpAt' is not null`,
+        sql`${messages.classification}->>'followUpDoneAt' is null`,
+        sql`(${messages.classification}->>'followUpAt')::timestamptz <= ${now.toISOString()}::timestamptz`,
+      ),
+    )
+    .orderBy(asc(messages.createdAt))
+    .limit(clampLimit(options.limit, 50, 200));
+}
+
+/** The lead's most recent outbound message in one of `statuses` (default: sent), or null. */
+export async function latestOutbound(
+  orgId: string,
+  leadId: string,
+  statuses: readonly MessageStatus[] = ["sent"],
+): Promise<Message | null> {
+  const db = await getDb();
+  const [row] = await db
+    .select()
+    .from(messages)
+    .where(
+      and(
+        eq(messages.leadId, leadId),
+        eq(messages.orgId, orgId),
+        eq(messages.direction, "out"),
+        inArray(messages.status, [...statuses]),
+      ),
+    )
+    .orderBy(desc(messages.createdAt), desc(messages.id))
+    .limit(1);
   return row ?? null;
 }

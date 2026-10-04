@@ -1,7 +1,7 @@
 import "server-only";
 import { and, count, eq, gte, isNotNull, sql, type SQL } from "drizzle-orm";
 import { getDb } from "../client";
-import { LEAD_STATUSES, leads } from "../schema";
+import { LEAD_STATUSES, leads, meetings } from "../schema";
 import type { LeadStatus } from "../types";
 
 /**
@@ -38,4 +38,34 @@ export async function countsByStatus(
   const counts = Object.fromEntries(LEAD_STATUSES.map((s) => [s, 0])) as Record<LeadStatus, number>;
   for (const row of rows) counts[row.status] = Number(row.n);
   return counts;
+}
+
+export type FirstResponseStats = {
+  /** Leads created since `since` that have a first reply. */
+  replied: number;
+  /** Of those, how many were answered within `withinSeconds`. */
+  withinTarget: number;
+};
+
+/** How many leads created since `since` were replied to, and how many within `withinSeconds` (default 60). */
+export async function firstResponseStats(orgId: string, since: Date, withinSeconds = 60): Promise<FirstResponseStats> {
+  const db = await getDb();
+  const [row] = await db
+    .select({
+      replied: count(),
+      withinTarget: sql<number | string>`count(*) filter (where extract(epoch from (${leads.firstReplyAt} - ${leads.createdAt})) <= ${withinSeconds})`,
+    })
+    .from(leads)
+    .where(and(eq(leads.orgId, orgId), gte(leads.createdAt, since), isNotNull(leads.firstReplyAt)));
+  return { replied: Number(row?.replied ?? 0), withinTarget: Number(row?.withinTarget ?? 0) };
+}
+
+/** Meetings booked (created) since `since`, excluding cancelled ones. */
+export async function meetingsBookedSince(orgId: string, since: Date): Promise<number> {
+  const db = await getDb();
+  const [row] = await db
+    .select({ n: count() })
+    .from(meetings)
+    .where(and(eq(meetings.orgId, orgId), gte(meetings.createdAt, since), sql`${meetings.status} <> 'cancelled'`));
+  return Number(row?.n ?? 0);
 }
