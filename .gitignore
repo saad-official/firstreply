@@ -1,0 +1,9 @@
+node_modules/
+.next/
+.env*
+!.env.example
+.vercel
+.claude/
+*.tsbuildinfo
+next-env.d.ts
+.pglite/
