@@ -9,13 +9,13 @@ import { optionalEnv, requireEnv } from "@/lib/env";
 import { stripe } from "@/lib/stripe/client";
 
 /**
- * Stripe Checkout, Customer Portal and subscription → plan sync (spec 3.5).
+ * Stripe Checkout, Customer Portal and subscription → plan sync (spec 2: Pro, $39/month).
  * Sandbox / test mode only. organizations.plan and stripe_* are written only
  * by `syncSubscriptionToOrg` (from the webhook), through
  * `organizations.setPlan`.
  */
 
-/** Pro is priced in euros; Checkout refuses a price in another currency. */
+/** Pro is priced in US dollars; Checkout refuses a price in another currency. */
 export const PRO_CURRENCY = "usd";
 
 /** True when the keys Checkout needs are present. The billing page disables its buttons otherwise. */
@@ -41,7 +41,7 @@ export async function createCheckoutSession(input: {
   const priceId = requireEnv("STRIPE_PRICE_PRO_MONTHLY");
   const price = await stripe().prices.retrieve(priceId);
   if (price.currency !== PRO_CURRENCY) {
-    throw new Error(`STRIPE_PRICE_PRO_MONTHLY is priced in ${price.currency.toUpperCase()}; Pro must be in EUR.`);
+    throw new Error(`STRIPE_PRICE_PRO_MONTHLY is priced in ${price.currency.toUpperCase()}; Pro must be in USD.`);
   }
 
   const session = await stripe().checkout.sessions.create({

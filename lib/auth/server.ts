@@ -81,6 +81,8 @@ export function createAuth(db: Db) {
     user: {
       additionalFields: {
         businessName: { type: "string", required: false, input: true },
+        /** Browser IANA time zone sent at sign-up; seeds the org time zone (invalid values fall back to UTC). */
+        timezone: { type: "string", required: false, input: true },
       },
     },
     session: {

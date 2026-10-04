@@ -1,8 +1,9 @@
 import "server-only";
 import { asc, eq } from "drizzle-orm";
 import type { Db } from "@/lib/db/client";
-import { isUniqueViolation, randomUrlSafeId } from "@/lib/db/repositories/shared";
-import { memberships, organizations } from "@/lib/db/schema";
+import { DEFAULT_AVAILABILITY } from "@/lib/db/repositories/availability";
+import { isUniqueViolation, isValidTimeZone, randomSlugSuffix } from "@/lib/db/repositories/shared";
+import { availabilityRules, memberships, organizations } from "@/lib/db/schema";
 import type { MembershipRole, Organization } from "@/lib/db/types";
 
 /**
@@ -45,33 +46,48 @@ export function slugify(value: string): string {
 }
 
 function slugCandidate(name: string): string {
-  const suffix = randomUrlSafeId(6).toLowerCase().replace(/[^a-z0-9]/g, "x");
-  return `${slugify(name) || "org"}-${suffix}`;
+  return `${slugify(name) || "org"}-${randomSlugSuffix(6)}`;
 }
 
+/** The sign-up time zone when it is a valid IANA name, else UTC. */
+export function organizationTimezoneFor(user: { timezone?: unknown }): string {
+  const tz = typeof user.timezone === "string" ? user.timezone.trim() : "";
+  return tz && isValidTimeZone(tz) ? tz : "UTC";
+}
+
+type SignUpUser = { id: string; email: string; businessName?: unknown; timezone?: unknown };
+
 /**
- * Creates the user's organization and owner membership, once. Called from
- * Better Auth's `databaseHooks.user.create.after`, and again (as a repair)
- * by `getOrgContext` if that hook ever failed. The slug gets a random suffix
- * and is retried on the (unlikely) unique collision.
+ * Creates the user's organization, owner membership and default weekly
+ * availability (Mon-Fri 09:00-17:00 in the org time zone), once, in one
+ * transaction. The booking page slug starts out equal to the org slug.
+ * Called from Better Auth's `databaseHooks.user.create.after`, and again (as
+ * a repair) by `getOrgContext` if that hook ever failed. The slug gets a
+ * random suffix and is retried on the (unlikely) unique collision.
  */
-export async function ensureOrganizationForUser(
-  db: Db,
-  user: { id: string; email: string; businessName?: unknown },
-): Promise<Membership> {
+export async function ensureOrganizationForUser(db: Db, user: SignUpUser): Promise<Membership> {
   const existing = await findMembershipForUser(db, user.id);
   if (existing) return existing;
 
   const name = organizationNameFor(user);
+  const timezone = organizationTimezoneFor(user);
   for (let attempt = 0; ; attempt++) {
     try {
       return await db.transaction(async (tx) => {
-        const [org] = await tx.insert(organizations).values({ name, slug: slugCandidate(name) }).returning();
+        const slug = slugCandidate(name);
+        const [org] = await tx
+          .insert(organizations)
+          .values({ name, slug, bookingSlug: slug, timezone })
+          .returning();
         await tx.insert(memberships).values({ orgId: org.id, userId: user.id, role: "owner" });
+        await tx.insert(availabilityRules).values(DEFAULT_AVAILABILITY.map((rule) => ({ orgId: org.id, ...rule })));
         return { org, role: "owner" as const };
       });
     } catch (error) {
-      if (attempt < 3 && isUniqueViolation(error, "organizations_slug_unique")) continue;
+      const slugClash =
+        isUniqueViolation(error, "organizations_slug_unique") ||
+        isUniqueViolation(error, "organizations_booking_slug_unique");
+      if (attempt < 3 && slugClash) continue;
       // A concurrent bootstrap for the same user may have won; use its result.
       const raced = await findMembershipForUser(db, user.id);
       if (raced) return raced;

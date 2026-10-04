@@ -8,11 +8,11 @@ export function MetricTile({
   className,
 }: {
   label: string;
-  /** Pre-formatted value, e.g. "$1,240.00" or "3". */
+  /** Pre-formatted value, e.g. "38s" or "3". */
   value: string;
   caption?: string;
-  /** "positive" is approved (green); "attention" is amber (needs evidence / action). */
-  tone?: "default" | "positive" | "attention";
+  /** "positive" is sea (booked, good); "attention" is lemon ink (needs approval); "primary" is coral. */
+  tone?: "default" | "positive" | "attention" | "primary";
   className?: string;
 }) {
   return (
@@ -21,8 +21,9 @@ export function MetricTile({
       <p
         className={cn(
           "tabular mt-2 font-heading text-3xl leading-none",
-          tone === "positive" && "text-approved",
-          tone === "attention" && "text-amber",
+          tone === "positive" && "text-sea",
+          tone === "attention" && "text-lemon-foreground",
+          tone === "primary" && "text-coral",
         )}
       >
         {value}
