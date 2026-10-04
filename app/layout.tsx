@@ -6,7 +6,7 @@ import "./globals.css";
 
 const heading = Bricolage_Grotesque({ variable: "--font-heading", subsets: ["latin"], weight: ["500", "600", "700", "800"], display: "swap" });
 const body = Inter({ variable: "--font-body", subsets: ["latin"], display: "swap" });
-const mono = JetBrains_Mono({ variable: "--font-mono", subsets: ["latin"], weight: ["400", "500"], display: "swap" });
+const mono = JetBrains_Mono({ variable: "--font-mono", subsets: ["latin"], display: "swap" });
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
