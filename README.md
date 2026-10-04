@@ -23,3 +23,21 @@ pnpm dev
 ## Docs
 
 - [Spec](docs/spec.md)
+
+## Live demo
+
+https://getfirstreply.vercel.app · Stripe runs in test mode (card `4242 4242 4242 4242`).
+
+1. Sign up (no card). On the empty dashboard, click **Load demo workspace**: six fictional leads for the agency "Northwind Studio" run through the real pipeline (enrichment from offline `.example` homepages, Groq scoring with signed reasons, a drafted reply with three real slots from the default Mon–Fri 09:00–17:00 availability).
+2. The **Queue** shows every draft with *why it waits* (a decline, a pricing question, Free plan) and which would auto-send on Pro. Approve, edit or reject.
+3. Open the lead and **Simulate lead reply** with accept / counter / question / decline / out-of-office. An accept books the meeting, sends the confirmation with an `.ics` invite, and the lead moves to Booked.
+4. The public booking page `/b/<your-slug>` and hosted form `/f/<your-slug>` work without sign-in; webhooks accept Typeform, Tally, Webflow and Framer payloads at `/api/leads/webhook/<token>`.
+5. Dashboard: median first reply against the 47-hour small-business average, replies under 60 s, meetings booked, agent activity log.
+
+Verified end to end on 4 Oct 2026 against the production Neon database: demo leads scored and drafted by Groq, a draft approved and sent, a simulated accept booked a meeting with a valid `text/calendar` invite; cron and Stripe webhook routes answer correctly.
+
+## Known gaps
+
+- Email leaves through the in-app Outbox (or Resend demo mode to your own address); no inbound mailbox is connected, so real lead replies arrive through `/api/inbound/email`.
+- Rate limiting is per server instance; the monthly lead cap in the database is the hard limit.
+- The provider set-up guides on the settings page were written from documentation memory and should be checked against each provider.
