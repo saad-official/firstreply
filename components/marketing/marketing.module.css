@@ -1,0 +1,21 @@
+/*
+  Motion for the marketing stopwatch dial. The finished state is the default;
+  the sweep only plays when the visitor has not asked for reduced motion.
+  Circle r = 52, so circumference = 326.73; 48 of 60 seconds leaves 65.35 undrawn.
+*/
+.sweep {
+  stroke-dasharray: 326.73;
+  stroke-dashoffset: 65.35;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sweep {
+    animation: sweep 1.6s cubic-bezier(0.2, 0.7, 0.2, 1) 0.2s both;
+  }
+}
+
+@keyframes sweep {
+  from {
+    stroke-dashoffset: 326.73;
+  }
+}
